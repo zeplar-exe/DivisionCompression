@@ -1,0 +1,3 @@
+This repository is my attempt to create a super-effective compression algorithm using basic math. Originally, I tried this with division and realized that the numbers I ended up with would always be the same size or larger than the original number, thus it was impossible to use this as a way to chop down the size of a file (a file can be turned into a number, after all).
+
+I also tried using different base systems and eh, that's the current state of the repository. It didn't work. It's a ~300% increase for any moderately large file.
