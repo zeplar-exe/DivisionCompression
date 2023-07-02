@@ -6,7 +6,7 @@ MAGIC_STRING = "division_compression.pyable"
 BYTE_ORDER = "big"
 BYTE_SIGNED = False
 STRING_ENCODING = "utf-8"
-LENGTH_INDICATOR_BYTES = 16
+LENGTH_INDICATOR_BYTES = 128
 COMPRESSED_FILE_EXTENSION = ".div"
 DECOMPRESSED_FILE_EXTENSION = ".undiv"
 
@@ -26,17 +26,32 @@ args = parser.parse_args()
 def byte_length(n):
     return (n.bit_length() + 7) // 8
 
+def to_base(n, b):
+    if n == 0:
+        return [0]
+    digits = []
+    while n:
+        digits.append(int(n % b))
+        n //= b
+    return digits[::-1]
+
+def from_base(digits, b):
+    n = 0
+    for d in digits:
+        n = b * n + d
+    return n
+
+def join_list(list):
+    return''.join(map(str, list))
+
 if args.command == "compress":
     f = open(args.file, "rb")
 
     file_bytes = f.read()
     num = int.from_bytes(file_bytes, BYTE_ORDER, signed=BYTE_SIGNED)
 
-    divisor = num // math.floor(len(file_bytes) * 0.5)
-    rounded_result = num // divisor
-    remainder = num % divisor
-
-    print(divisor)
+    base = 577
+    digits = to_base(num, base)
 
     f.close()
 
@@ -47,20 +62,27 @@ if args.command == "compress":
 
     f = open(out_file, "wb")
 
-    divisor_bytes = divisor.to_bytes(byte_length(divisor), BYTE_ORDER, signed=BYTE_SIGNED)
-    rounded_result_bytes = rounded_result.to_bytes(byte_length(rounded_result), BYTE_ORDER, signed=BYTE_SIGNED)
-    remainder_bytes = remainder.to_bytes(byte_length(remainder), BYTE_ORDER, signed=BYTE_SIGNED)
-
     f.write(MAGIC_STRING.encode(STRING_ENCODING))
 
-    f.write(len(divisor_bytes).to_bytes(LENGTH_INDICATOR_BYTES, BYTE_ORDER, signed=BYTE_SIGNED))
-    f.write(divisor_bytes)
+    base_bytes = base.to_bytes(byte_length(base), BYTE_ORDER, signed=BYTE_SIGNED)
+    base_length_bytes = len(base_bytes).to_bytes(LENGTH_INDICATOR_BYTES, BYTE_ORDER, signed=BYTE_SIGNED)
 
-    f.write(len(rounded_result_bytes).to_bytes(LENGTH_INDICATOR_BYTES, BYTE_ORDER, signed=BYTE_SIGNED))
-    f.write(rounded_result_bytes)
+    f.write(base_length_bytes)
+    f.write(base_bytes)
+    
+    digits_length_bytes = len(digits).to_bytes(LENGTH_INDICATOR_BYTES, BYTE_ORDER, signed=BYTE_SIGNED)
+    digit_length = max(map(lambda n : len(str(n)), digits))
+    digit_length_bytes = digit_length.to_bytes(LENGTH_INDICATOR_BYTES, BYTE_ORDER, signed=BYTE_SIGNED)
 
-    f.write(len(remainder_bytes).to_bytes(LENGTH_INDICATOR_BYTES, BYTE_ORDER, signed=BYTE_SIGNED))
-    f.write(remainder_bytes)
+    print(digit_length)
+    print(len(digits))
+
+    f.write(digits_length_bytes)
+    f.write(digit_length_bytes)
+
+    for digit in digits:
+        digit_bytes = digit.to_bytes(digit_length, BYTE_ORDER, signed=BYTE_SIGNED)
+        f.write(digit_bytes)
     
     f.flush()
     f.close()
@@ -80,16 +102,19 @@ elif args.command == "decompress":
     if magic != MAGIC_STRING:
         fail("Magic string missing.")
 
-    divisor_length = int.from_bytes(f.read(LENGTH_INDICATOR_BYTES), BYTE_ORDER, signed=BYTE_SIGNED)
-    divisor = int.from_bytes(f.read(divisor_length), BYTE_ORDER, signed=BYTE_SIGNED)
+    base_length = int.from_bytes(f.read(LENGTH_INDICATOR_BYTES), BYTE_ORDER, signed=BYTE_SIGNED)
+    base = int.from_bytes(f.read(base_length), BYTE_ORDER, signed=BYTE_SIGNED)
+    
+    digits_length = int.from_bytes(f.read(LENGTH_INDICATOR_BYTES), BYTE_ORDER, signed=BYTE_SIGNED)
+    digit_length = int.from_bytes(f.read(LENGTH_INDICATOR_BYTES), BYTE_ORDER, signed=BYTE_SIGNED)
 
-    rounded_result_length = int.from_bytes(f.read(LENGTH_INDICATOR_BYTES), BYTE_ORDER, signed=BYTE_SIGNED)
-    rounded_result = int.from_bytes(f.read(rounded_result_length), BYTE_ORDER, signed=BYTE_SIGNED)
+    digits = []
 
-    remainder_length = int.from_bytes(f.read(LENGTH_INDICATOR_BYTES), BYTE_ORDER, signed=BYTE_SIGNED)
-    remainder = int.from_bytes(f.read(remainder_length), BYTE_ORDER, signed=BYTE_SIGNED)
+    for i in range(digits_length):
+        digit = int.from_bytes(f.read(digit_length), BYTE_ORDER, signed=BYTE_SIGNED)
+        digits.append(digit)
 
-    decompressed = rounded_result * divisor + remainder
+    decompressed = from_base(digits, base)
     decompressed_bytes = decompressed.to_bytes(byte_length(decompressed), BYTE_ORDER, signed=BYTE_SIGNED)
 
     f.close()
